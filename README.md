@@ -21,20 +21,6 @@ https://github.com/user-attachments/assets/ada47ba7-cf64-405b-bc07-185dc10ef2ef
 You need Herdr 0.8.2+ and Go 1.24+ on macOS, Linux or Windows. Herdr builds the
 plugin from source when it installs it.
 
-```sh
-herdr plugin install kryptamine/herdr-auto-title
-herdr plugin action invoke herdr.auto-title.restart
-```
-
-> [!IMPORTANT]
-> Herdr starts plugins only when its server starts, so the second line starts
-> this one now. Reopening the terminal attaches a new client to the same server
-> and does not help; `herdr server stop` would work, at the cost of the session.
-
-That installs the latest commit on `main`, which can be ahead of the latest
-[release](https://github.com/kryptamine/herdr-auto-title/releases). To install
-a release instead, name its tag:
-
 <!-- x-release-please-start-version -->
 
 ```sh
@@ -44,12 +30,57 @@ herdr plugin action invoke herdr.auto-title.restart
 
 <!-- x-release-please-end -->
 
-Herdr has no update command yet, so run the install again to move to a newer
-commit or tag, then the restart action: the old build keeps running until it
-does. Your configuration is kept.
+The second line starts the plugin now. Without it Herdr starts a plugin only
+when its server next starts.
 
-If you use Claude Code, also run `herdr integration install claude`. Without it,
-a session you opened with a slash command and never prompted stays `claude`.
+To update, run both lines again with the newer
+[release](https://github.com/kryptamine/herdr-auto-title/releases) tag. Your
+configuration is kept.
+
+To run the latest commit on `main`, which can be ahead of the latest release,
+leave the tag out:
+
+```sh
+herdr plugin install kryptamine/herdr-auto-title
+herdr plugin action invoke herdr.auto-title.restart
+```
+
+## Recommended setup
+
+Three settings make Auto Title work as intended. Each is optional.
+
+**Create tabs without a name prompt.** Herdr asks for a name before it creates
+a tab, and a name typed there counts as your own, so Auto Title never names
+that tab. In Herdr's `config.toml`:
+
+```toml
+[ui]
+prompt_new_tab_name = false
+```
+
+**Install Herdr's Claude Code integration**, if you use Claude Code. Without
+it, a session you opened with a slash command and never prompted stays
+`claude`.
+
+```sh
+herdr integration install claude
+```
+
+**Show the topic in the sidebar.** Auto Title reports what each workspace's
+active tab is doing as `$topic`, and Herdr draws it only where a sidebar row
+asks for it. This keeps the name and branch on top, with the topic in bold
+under them:
+
+```toml
+[ui.sidebar.spaces]
+rows = [
+  ["state_icon", "workspace", "branch", "git_status"],
+  [{ token = "$topic", bold = true, dim = false }],
+]
+```
+
+Each client reads its own `config.toml`, so set the rows on every machine you
+attach from.
 
 ## What you get
 
@@ -73,27 +104,6 @@ $HOME                                  →  7 · Shell
   longer lists every Claude Code pane as `claude`.
 - Rename a tab or a pane yourself and Auto Title stops touching it. Clear the
   name to hand it back.
-- The sidebar can say what each workspace is doing. Auto Title reports its
-  active tab's topic -- what the agent or program there is working on, never
-  the directory or the branch -- and leaves the workspace's name alone. Add a
-  `$topic` row to Herdr's `config.toml` to see it. This one keeps the name and
-  branch on top, as Herdr draws them, with the topic in bold under them:
-
-  ```toml
-  [ui.sidebar.spaces]
-  rows = [
-    ["state_icon", "workspace", "branch", "git_status"],
-    [{ token = "$topic", bold = true, dim = false }],
-  ]
-  ```
-
-  Herdr draws a topic dim unless the row says otherwise, and drops the row of a
-  workspace that has none. Each client reads its own `config.toml`, so set the
-  rows on every machine you attach from.
-
-  A topic fades within a minute of Auto Title stopping or of
-  `HERDR_AUTO_TITLE_WORKSPACES=false`. A workspace name that an earlier Auto
-  Title wrote, old task and all, stays until you rename or close the workspace.
 - On Windows, Herdr reports only the shell or an agent running in a pane, so an
   editor or an ssh or mosh session does not name its tab.
 
@@ -104,23 +114,15 @@ $HOME                                  →  7 · Shell
 ## Configuration
 
 Every setting is optional. Copy [`config.env.example`](config.env.example) to
-`herdr-auto-title/config.env` in your configuration directory and uncomment
-what you need. Auto Title looks in these, in order, and uses the first that
-already holds the file:
+`~/.config/herdr-auto-title/config.env` and uncomment what you need. That path
+works on every platform: on Windows it is under `%USERPROFILE%\.config`. Then
+[restart](#restarting): the file is read once at startup.
 
-| Order | Directory                                                        |
-| ----- | ---------------------------------------------------------------- |
-| 1     | `$XDG_CONFIG_HOME` when it is set to an absolute path            |
-| 2     | `~/.config`, which is `%USERPROFILE%\.config` on Windows         |
-| 3     | `~/Library/Application Support` on macOS, `%APPDATA%` on Windows |
-
-So `~/.config/herdr-auto-title/config.env` works on every platform, Windows
-included, and one dotfiles repository serves every machine. A file already
-sitting in `~/Library/Application Support` or `%APPDATA%` keeps being read
-where it is.
-
-Auto Title reads the file once at startup, so [restart it](#restarting) after a
-change. It does not read the config directory that `herdr plugin list` prints.
+Two other directories are read, and the first that already holds the file
+wins: `$XDG_CONFIG_HOME`, when it is set to an absolute path, comes before
+`~/.config`, and `~/Library/Application Support` on macOS or `%APPDATA%` on
+Windows comes after it. The config directory that `herdr plugin list` prints is
+not read.
 
 | Setting                         | Default                                  | What it does                                                       |
 | ------------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
@@ -150,25 +152,12 @@ herdr plugin action invoke herdr.auto-title.restart
 ```
 
 This starts a fresh Auto Title in place of the running one, and a notification
-says how it went. Run it after upgrading, after changing the configuration, or
-when the plugin has stopped naming tabs. To put it on a key, add to Herdr's
-`config.toml`:
+says how it went. Run it after an update, after changing the configuration, or
+when the plugin has stopped naming tabs.
 
-```toml
-[[keys.command]]
-key = "prefix+R"
-type = "plugin_action"
-command = "herdr.auto-title.restart"
-description = "restart auto title"
-```
-
-That notification needs Herdr's toasts on. With `[ui.toast] delivery = "off"`
-Herdr answers that it showed the notice, nothing appears, and the outcome is
-left in `herdr plugin log list`.
-
-Two limits. The first upgrade from a version without this action still needs
-`herdr server stop`, because the instance already running does not know to
-leave. On Windows the action needs Herdr 0.9.0 or newer.
+On Windows the action needs Herdr 0.9.0 or newer. An upgrade from a version
+before 0.8.0 needs one `herdr server stop` instead: that instance does not know
+to leave.
 
 ## Documentation
 
