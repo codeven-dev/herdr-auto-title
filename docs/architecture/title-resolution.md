@@ -139,7 +139,10 @@ minute later, and a miss costs one glob.
 Two lines in a transcript can name a session:
 
 - `ai-title`, the title Claude Code generates and puts in its terminal title.
-  The last one wins — a session is renamed as it goes.
+  It is generated once, from the first prompt, and the same record is then
+  repeated for the rest of the session: it does not follow the work, and none
+  of two hundred transcripts held a second distinct one. The name moves only
+  when the user gives the session one.
 - failing that, the **first prompt the user actually typed**, which is what
   Claude Code's own session list shows for an untitled session. A prompt that is
   a slash command yields the command and what it was called with
