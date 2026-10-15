@@ -86,6 +86,10 @@ func aiTitle(title string) string {
 	return `{"type":"ai-title","aiTitle":"` + title + `","sessionId":"` + session + `"}`
 }
 
+func customTitle(title string) string {
+	return `{"type":"custom-title","customTitle":"` + title + `","sessionId":"` + session + `"}`
+}
+
 func human(text string) string {
 	return `{"type":"user","origin":{"kind":"human"},"message":{"role":"user","content":"` + text + `"}}`
 }
@@ -182,6 +186,83 @@ func TestATitleOutranksTheOpening(t *testing.T) {
 		t.Errorf("text = %q, want the title", got.Text())
 	case got.Opening != "rework the poll loop":
 		t.Errorf("opening = %q, want the first prompt kept", got.Opening)
+	}
+}
+
+func TestARenameOutranksTheGeneratedTitleWrittenAfterIt(t *testing.T) {
+	t.Parallel()
+
+	// Claude Code keeps writing the old generated title beside the rename, so
+	// a reader that let the last of the two win would name the tab after it.
+	p := newProject(t)
+	p.write(
+		human("fix the redirect"),
+		aiTitle("OAuth redirect fix"),
+		customTitle("SSRF guard"),
+		aiTitle("OAuth redirect fix"),
+	)
+
+	if got := p.reader().Topic(session, started); got.Text() != "SSRF guard" {
+		t.Errorf("topic = %+v, want the rename", got)
+	}
+}
+
+func TestARenameOutranksTheOpening(t *testing.T) {
+	t.Parallel()
+
+	// A session cleared after a rename starts a transcript with the rename and
+	// no generated title, and must not be named after its first prompt.
+	p := newProject(t)
+	p.write(customTitle("SSRF guard"), human("now the tests"), customTitle("SSRF guard"))
+
+	got := p.reader().Topic(session, started)
+	switch {
+	case got.Text() != "SSRF guard":
+		t.Errorf("text = %q, want the rename", got.Text())
+	case got.Opening != "now the tests":
+		t.Errorf("opening = %q, want the first prompt kept", got.Opening)
+	}
+}
+
+func TestASessionStartedWithANameIsNamedByIt(t *testing.T) {
+	t.Parallel()
+
+	// A session started with a name opens with that name and never gets a
+	// generated title at all.
+	p := newProject(t)
+	p.write(customTitle("lsp-trial"), human("try the language server"))
+
+	if got := p.reader().Topic(session, started); got.Text() != "lsp-trial" {
+		t.Errorf("topic = %+v, want the name it was started with", got)
+	}
+}
+
+func TestTheLastRenameWins(t *testing.T) {
+	t.Parallel()
+
+	p := newProject(t)
+	p.write(customTitle("First name"), customTitle("Second name"))
+
+	if got := p.reader().Topic(session, started); got.Text() != "Second name" {
+		t.Errorf("topic = %+v, want the last rename", got)
+	}
+}
+
+func TestAnEmptyRenameChangesNothing(t *testing.T) {
+	t.Parallel()
+
+	p := newProject(t)
+	p.write(customTitle("SSRF guard"), customTitle(""))
+
+	if got := p.reader().Topic(session, started); got.Text() != "SSRF guard" {
+		t.Errorf("topic = %+v, want the rename kept", got)
+	}
+
+	q := newProject(t)
+	q.write(aiTitle("OAuth redirect fix"), customTitle(""))
+
+	if got := q.reader().Topic(session, started); got.Text() != "OAuth redirect fix" {
+		t.Errorf("topic = %+v, want the generated title", got)
 	}
 }
 
@@ -428,6 +509,88 @@ func TestATranscriptThatWentMissingIsLookedForAgain(t *testing.T) {
 
 	if got := reader.Topic(session, started); got.Text() != "Rework the poll loop" {
 		t.Errorf("topic = %+v, want the replacement transcript found and read", got)
+	}
+}
+
+func TestARenameIsReadOnTheNextPoll(t *testing.T) {
+	t.Parallel()
+
+	p := newProject(t)
+	p.write(human("fix the redirect"), aiTitle("OAuth redirect fix"))
+
+	reader := p.reader()
+	if got := reader.Topic(session, started); got.Text() != "OAuth redirect fix" {
+		t.Fatalf("topic = %+v, want the generated title", got)
+	}
+
+	p.appendLines(customTitle("SSRF guard"), aiTitle("OAuth redirect fix"))
+
+	if got := reader.Topic(session, started); got.Text() != "SSRF guard" {
+		t.Errorf("topic = %+v, want the rename that arrived since", got)
+	}
+}
+
+func TestARenameIsFoundInTheTailOfALongTranscript(t *testing.T) {
+	t.Parallel()
+
+	// A session first seen mid-flight is read from its last maxScan bytes, and
+	// the rename made before then is only there because Claude Code repeats it.
+	filler := `{"type":"assistant","message":{"content":"` + strings.Repeat("x", 1000) + `"}}`
+
+	padding := maxScan/len(filler) + 1
+
+	lines := make([]string, 0, padding+4)
+	lines = append(lines, customTitle("SSRF guard"), human("fix the redirect"))
+
+	for range padding {
+		lines = append(lines, filler)
+	}
+
+	lines = append(lines, customTitle("SSRF guard"), aiTitle("OAuth redirect fix"))
+
+	p := newProject(t)
+	p.write(lines...)
+
+	if got := p.reader().Topic(session, started); got.Text() != "SSRF guard" {
+		t.Errorf("topic = %+v, want the rename read from the tail", got)
+	}
+}
+
+func TestATranscriptThatShrankForgetsTheRename(t *testing.T) {
+	t.Parallel()
+
+	p := newProject(t)
+	p.write(human("fix the redirect"), customTitle("SSRF guard"))
+
+	reader := p.reader()
+	if got := reader.Topic(session, started); got.Text() != "SSRF guard" {
+		t.Fatalf("topic = %+v", got)
+	}
+
+	p.write(human("x"))
+
+	if got := reader.Topic(session, started); got.Text() != "x" {
+		t.Errorf("topic = %+v, want the rename gone with the old transcript", got)
+	}
+}
+
+func TestATranscriptThatWentMissingKeepsItsRename(t *testing.T) {
+	t.Parallel()
+
+	p := newProject(t)
+	p.write(aiTitle("OAuth redirect fix"), customTitle("SSRF guard"))
+
+	reader := p.reader()
+	if got := reader.Topic(session, started); got.Text() != "SSRF guard" {
+		t.Fatalf("topic = %+v", got)
+	}
+
+	if err := os.Remove(p.path()); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := reader.Topic(session, started); got.Text() != "SSRF guard" {
+		t.Errorf("topic = %+v, want the rename kept", got)
 	}
 }
 
