@@ -34,8 +34,11 @@ const locateRetry = 10 * time.Second
 
 // Topic is what a session says it is about.
 type Topic struct {
-	// Title is what Claude Code named the session, which it derives from the
-	// user's own prompts and leaves empty until it has seen one.
+	// Custom is the name the session was given, at launch or with /rename. It
+	// outranks Title, which Claude Code keeps writing beside it unchanged.
+	Custom string
+	// Title is what Claude Code generated from the first prompt, and leaves
+	// empty until it has seen one. It does not change after that.
 	Title string
 	// Opening is what the session started with. It names a session that has
 	// not earned a title yet: one opened with a slash command and answered by
@@ -46,8 +49,13 @@ type Topic struct {
 	Dir string
 }
 
-// Text is what the topic contributes to a title, the generated name first.
+// Text is what the topic contributes to a title: the name the session was
+// given, then the generated one, then how it opened.
 func (t Topic) Text() string {
+	if t.Custom != "" {
+		return t.Custom
+	}
+
 	if t.Title != "" {
 		return t.Title
 	}
@@ -284,10 +292,11 @@ func (r *Reader) readInto(session *transcript) {
 // timestamps, token counts, the whole assistant turn — and none of it says what
 // the session is about.
 type entry struct {
-	Type    string `json:"type"`
-	CWD     string `json:"cwd"`
-	AITitle string `json:"aiTitle"`
-	Origin  *struct {
+	Type        string `json:"type"`
+	CWD         string `json:"cwd"`
+	AITitle     string `json:"aiTitle"`
+	CustomTitle string `json:"customTitle"`
+	Origin      *struct {
 		Kind string `json:"kind"`
 	} `json:"origin"`
 	Message struct {
@@ -299,9 +308,9 @@ type entry struct {
 // expanded into the conversation or a tool answered with.
 const humanOrigin = "human"
 
-// absorb updates the topic from a run of transcript lines. The last title wins
-// and the first opening does: a session is renamed as it goes, but it opened
-// only once.
+// absorb updates the topic from a run of transcript lines. The last name of
+// each kind wins and the first opening does: a session can be renamed, but it
+// opened only once.
 func (t *transcript) absorb(lines string) {
 	for line := range strings.SplitSeq(lines, "\n") {
 		if line == "" {
@@ -321,6 +330,8 @@ func (t *transcript) absorb(lines string) {
 		}
 
 		switch {
+		case read.Type == "custom-title" && read.CustomTitle != "":
+			t.topic.Custom = read.CustomTitle
 		case read.Type == "ai-title" && read.AITitle != "":
 			t.topic.Title = read.AITitle
 		case read.Type == "user" && t.topic.Opening == "" && read.Origin != nil && read.Origin.Kind == humanOrigin:

@@ -136,13 +136,21 @@ at all answers nothing. An entry that is not a directory when
 the plugin starts is reported and searched anyway: a home can be created a
 minute later, and a miss costs one glob.
 
-Two lines in a transcript can name a session:
+Three lines in a transcript can name a session, in this order:
 
-- `ai-title`, the title Claude Code generates and puts in its terminal title.
-  It is generated once, from the first prompt, and the same record is then
-  repeated for the rest of the session: it does not follow the work, and none
-  of two hundred transcripts held a second distinct one. The name moves only
-  when the user gives the session one.
+- `custom-title`, the name the session was given: at launch, where it is the
+  first record and no `ai-title` ever follows, or later with `/rename`. Claude
+  Code keeps writing the old `ai-title` beside it after a rename, alternating
+  the two to the end of the file, so the name is kept apart from the generated
+  title and outranks it whatever order they arrive in. The terminal title
+  already follows a rename, so this matters where the terminal title is
+  missing, or after `/clear`, whose new transcript carries the name and no
+  `ai-title` at all.
+- failing that, `ai-title`, the title Claude Code generates and puts in its
+  terminal title. It is generated once, from the first prompt, and the same
+  record is then repeated for the rest of the session: it does not follow the
+  work, and none of two hundred transcripts held a second distinct one. The
+  name moves only when the user gives the session one, which is the line above.
 - failing that, the **first prompt the user actually typed**, which is what
   Claude Code's own session list shows for an untitled session. A prompt that is
   a slash command yields the command and what it was called with
@@ -160,10 +168,11 @@ Three costs are worth stating plainly:
 - **It reads what the user said to their agent.** That is why it can be turned
   off with `HERDR_AUTO_TITLE_TRANSCRIPT=false`, and why nothing else in the
   plugin reads a file it was not pointed at.
-- **The format is undocumented.** `ai-title` and `origin.kind` are Claude Code's
-  internals and can change in any release. A transcript that no longer carries
-  them yields nothing and the source declines — the failure mode is the tab
-  named as it was before this existed, not a wrong name.
+- **The format is undocumented.** `custom-title`, `ai-title` and
+  `origin.kind` are Claude Code's internals and can change in any release. A
+  transcript that no longer carries them yields nothing and the source
+  declines — the failure mode is the tab named as it was before this existed,
+  not a wrong name.
 - **The session id becomes part of a path.** It arrives over the socket, so it
   is refused unless it is shaped like a UUID rather than cleaned.
 
@@ -305,12 +314,12 @@ Where the agent is working comes from the session transcript already opened for
 its topic, as `claude.Topic.Dir` (`internal/claude/transcript.go`), and is `""`
 when the transcript names none — no extra read, and nothing is opened that was
 not going to be read anyway. The transcript carries a `cwd` on its `user`,
-`assistant`, `system` and `attachment` lines but not on `ai-title`,
-`last-prompt`, `mode` and several other types, so the reader remembers the last
-line that carried one. It is reported as the transcript spelled it, and only an
-empty value is refused, because that would erase the directory the session last
-named; whether a path can be a checkout at all is settled where one is read. It
-is cleared by the truncation reset and
+`assistant`, `system` and `attachment` lines but not on `custom-title`,
+`ai-title`, `last-prompt`, `mode` and several other types, so the reader
+remembers the last line that carried one. It is reported as the transcript
+spelled it, and only an empty value is refused, because that would erase the
+directory the session last named; whether a path can be a checkout at all is
+settled where one is read. It is cleared by the truncation reset and
 survives the lost-path reset, exactly as the topic does — a transcript that was
 replaced says nothing until it has been read again, and one whose file has gone
 missing still says what it last said.
